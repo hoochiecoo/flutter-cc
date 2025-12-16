@@ -1,4 +1,4 @@
-name: Build FFI App
+name: Build FFI Project (Auto-Fix)
 
 on:
   push:
@@ -11,36 +11,75 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # Установка Java (нужна для Android сборки)
       - uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      # Установка Flutter
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           flutter-version: '3.19.0'
           cache: true
 
-      # Загрузка зависимостей
+      # -------------------------------------------------------
+      # ШАГ 1: ВОССТАНОВЛЕНИЕ СТРУКТУРЫ ANDROID
+      # -------------------------------------------------------
+      - name: Regenerate Android Project
+        run: |
+          # Удаляем старую папку, чтобы избежать конфликтов версий
+          rm -rf android
+          # Создаем чистую структуру Android (v2 embedding)
+          flutter create . --project-name=webview_ci_app --org com.bowlmates.app --platforms=android
+
+      # -------------------------------------------------------
+      # ШАГ 2: СОЗДАНИЕ C-КОДА И CMAKE (Для гарантии)
+      # -------------------------------------------------------
+      - name: Setup Native Code
+        run: |
+          mkdir -p src
+          
+          # Создаем файл C
+          echo '#include <stdint.h>
+          __attribute__((visibility("default"))) __attribute__((used))
+          int32_t native_add(int32_t x, int32_t y) {
+              return x + y;
+          }' > src/native_add.c
+
+          # Создаем CMakeLists.txt
+          echo 'cmake_minimum_required(VERSION 3.4.1)
+          add_library( 
+              native_add
+              SHARED
+              ../../src/native_add.c 
+          )' > android/app/CMakeLists.txt
+
+      # -------------------------------------------------------
+      # ШАГ 3: НАСТРОЙКА GRADLE ДЛЯ FFI
+      # -------------------------------------------------------
+      - name: Patch build.gradle for FFI
+        run: |
+          # 1. Устанавливаем minSdkVersion 21
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 21/g' android/app/build.gradle
+          sed -i 's/minSdkVersion .*/minSdkVersion 21/g' android/app/build.gradle
+          
+          # 2. Внедряем блок externalNativeBuild внутрь android { ... }
+          # Мы вставляем его перед закрывающей скобкой defaultConfig, так проще зацепиться
+          sed -i '/versionName flutterVersionName/a \ \ \ \ \ \ \ \ externalNativeBuild {\n            cmake {\n                path "CMakeLists.txt"\n            }\n        }' android/app/build.gradle
+          
+          echo "Patched build.gradle content:"
+          cat android/app/build.gradle
+
       - name: Get Dependencies
         run: flutter pub get
 
-      # ВАЖНО: CMake и NDK устанавливаются автоматически при сборке flutter build apk,
-      # если в build.gradle прописан externalNativeBuild.
-      
-      # Сборка APK
       - name: Build APK
         run: flutter build apk --release --no-tree-shake-icons
 
-      # Загрузка артефакта
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-ffi
-          path: build/app/outputs/flutter-apk/app-frelease.apk
+          name: ffi-app-release
+          path: build/app/outputs/flutter-apk/app-release.apk
