@@ -1,5 +1,3 @@
-name: Build FFI Project (Fixed Gradle)
-
 on:
   push:
     branches: [ "main", "master" ]
@@ -24,39 +22,50 @@ jobs:
           flutter-version: '3.19.0'
           cache: true
 
-      # 1. Пересоздаем Android проект, чтобы гарантировать V2 Embedding
+      # -------------------------------------------------------
+      # ШАГ 1: ГЕНЕРАЦИЯ ЧИСТОГО ANDROID ПРОЕКТА
+      # Мы удаляем папку android и создаем её заново через flutter create.
+      # Это решает все проблемы с версиями Gradle и V1 embedding.
+      # -------------------------------------------------------
       - name: Regenerate Android Project
         run: |
           rm -rf android
           flutter create . --project-name=webview_ci_app --org com.bowlmates.app --platforms=android
 
-      # 2. Создаем нативные файлы (C и CMake)
+      # -------------------------------------------------------
+      # ШАГ 2: НАСТРОЙКА NATIVE КОДА (C/C++)
+      # Убеждаемся, что файлы на месте, даже если их нет в git
+      # -------------------------------------------------------
       - name: Setup Native Code
         run: |
           mkdir -p src
           
-          # C code
-          echo '#include <stdint.h>
-          __attribute__((visibility("default"))) __attribute__((used))
-          int32_t native_add(int32_t x, int32_t y) {
-              return x + y;
-          }' > src/native_add.c
+          # Если файла C нет, создаем его (резервный вариант)
+          if [ ! -f src/native_add.c ]; then
+            echo '#include <stdint.h>
+            __attribute__((visibility("default"))) __attribute__((used))
+            int32_t native_add(int32_t x, int32_t y) { return x + y; }' > src/native_add.c
+          fi
 
-          # CMakeLists
+          # Создаем/Перезаписываем CMakeLists.txt в папке приложения
           echo 'cmake_minimum_required(VERSION 3.4.1)
           add_library( native_add SHARED ../../src/native_add.c )' > android/app/CMakeLists.txt
 
-      # 3. Патчим build.gradle (ИСПРАВЛЕНО МЕСТО ВСТАВКИ)
+      # -------------------------------------------------------
+      # ШАГ 3: ПАТЧ GRADLE (САМОЕ ВАЖНОЕ)
+      # Вставляем ссылку на CMake в build.gradle
+      # -------------------------------------------------------
       - name: Patch build.gradle for FFI
         run: |
-          # Ставим minSdkVersion 21
+          # 1. Устанавливаем минимальную версию SDK на 21
           sed -i 's/minSdkVersion .*/minSdkVersion 21/g' android/app/build.gradle
           
-          # Вставляем externalNativeBuild ПЕРЕД блоком buildTypes.
-          # Это гарантирует, что мы внутри 'android {}', но СНАРУЖИ 'defaultConfig {}'
-          sed -i '/buildTypes {/i \    externalNativeBuild {\n        cmake {\n            path "CMakeLists.txt"\n        }\n    }\n' android/app/build.gradle
+          # 2. Вставляем блок externalNativeBuild.
+          # Ищем строку "buildTypes {" и вставляем код ПЕРЕД ней.
+          # Это помещает блок внутрь "android {}", но вне "defaultConfig {}".
+          sed -i '/buildTypes {/i \\    externalNativeBuild {\\n        cmake {\\n            path "CMakeLists.txt"\\n        }\\n    }\\n' android/app/build.gradle
           
-          echo "Verifying build.gradle content:"
+          echo "Checked build.gradle content:"
           cat android/app/build.gradle
 
       - name: Get Dependencies
