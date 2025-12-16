@@ -1,0 +1,46 @@
+name: Build FFI App
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Установка Java (нужна для Android сборки)
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      # Установка Flutter
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          flutter-version: '3.19.0'
+          cache: true
+
+      # Загрузка зависимостей
+      - name: Get Dependencies
+        run: flutter pub get
+
+      # ВАЖНО: CMake и NDK устанавливаются автоматически при сборке flutter build apk,
+      # если в build.gradle прописан externalNativeBuild.
+      
+      # Сборка APK
+      - name: Build APK
+        run: flutter build apk --release --no-tree-shake-icons
+
+      # Загрузка артефакта
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-ffi
+          path: build/app/outputs/flutter-apk/app-frelease.apk
