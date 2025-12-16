@@ -1,37 +1,22 @@
 # Flutter FFI CI Project
 
-Этот проект был сгенерирован автоматически. Он содержит конфигурацию для FFI (C code) и GitHub CI.
+Проект настроен для тестирования FFI с GitHub Actions.
 
-### Как запустить (Важно!)
+### Как это работает
+В этом репозитории нет папки `android/`. 
+GitHub Action (**build.yml**) автоматически запускает `flutter create .`, чтобы создать свежую структуру Android проекта, а затем с помощью скриптов внедряет настройки CMake и C-кода.
 
-Так как этот ZIP содержит только измененные файлы конфигурации и исходный код, вам нужно восстановить стандартные файлы Flutter (Gradle wrapper и т.д.).
+Это гарантирует успешную сборку без ошибок "Deprecated Android v1 Embedding".
 
-1. Распакуйте архив.
-2. Откройте терминал в папке `webview_ci_app`.
-3. Запустите команду:
-   ```bash
-   flutter create . --org com.bowlmates.app
+### Локальный запуск
+Если вы хотите запустить это на своем компьютере:
+1. `flutter create . --org com.bowlmates.app`
+2. Добавьте в `android/app/build.gradle` внутрь блока `android {}` (но не в defaultConfig):
+   ```gradle
+   externalNativeBuild {
+       cmake {
+           path "CMakeLists.txt"
+       }
+   }
    ```
-4. **ВАЖНО:** Когда Flutter спросит, перезаписывать ли существующие файлы:
-   - `android/app/build.gradle`: Ответьте **n** (нет), чтобы сохранить настройки FFI.
-   - `lib/main.dart`: Ответьте **n** (нет), чтобы сохранить код вызова C-функции.
-   - `android/app/src/main/AndroidManifest.xml`: Ответьте **n** (нет).
-   - Если спросит про другие файлы (например `README.md`), тоже лучше **n**.
-
-   *Если вы случайно перезаписали их:* просто скопируйте файлы из архива снова.
-
-5. Запустите локально:
-   ```bash
-   flutter run
-   ```
-
-6. Загрузите на GitHub:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit with FFI"
-   # git remote add origin <ваша-ссылка>
-   # git push -u origin main
-   ```
-
-После пуша GitHub Actions автоматически соберет APK.
+3. `flutter run`

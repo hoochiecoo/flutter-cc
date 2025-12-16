@@ -2,7 +2,6 @@ import 'dart:ffi';
 import 'dart:io';
 import 'package:flutter/material.dart';
 
-// Сигнатуры
 typedef NativeAddFunc = Int32 Function(Int32 a, Int32 b);
 typedef NativeAdd = int Function(int a, int b);
 
@@ -19,7 +18,7 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   int _result = 0;
-  String _status = "Waiting for FFI...";
+  String _status = "Initializing...";
 
   @override
   void initState() {
@@ -29,6 +28,7 @@ class _MyAppState extends State<MyApp> {
 
   void _initFFI() {
     try {
+      // На Android библиотека упаковывается в APK как libnative_add.so
       final DynamicLibrary nativeLib = Platform.isAndroid
           ? DynamicLibrary.open('libnative_add.so')
           : DynamicLibrary.process();
@@ -37,15 +37,18 @@ class _MyAppState extends State<MyApp> {
           .lookup<NativeFunction<NativeAddFunc>>('native_add')
           .asFunction();
       
+      // Вызываем C функцию
+      final calcResult = nativeAdd(10, 50);
+
       setState(() {
-        _result = nativeAdd(10, 20);
-        _status = "FFI Success!";
+        _result = calcResult;
+        _status = "FFI Connected ✅";
       });
     } catch (e) {
       setState(() {
-        _status = "Error: $e";
+        _status = "FFI Error ❌: $e";
       });
-      print(e);
+      debugPrint(e.toString());
     }
   }
 
@@ -53,15 +56,23 @@ class _MyAppState extends State<MyApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       home: Scaffold(
-        appBar: AppBar(title: const Text('Dart FFI CI Test')),
+        appBar: AppBar(title: const Text('FFI CI Test')),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(_status, style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text(_status, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 20),
-              const Text('10 + 20 (C Code) ='),
-              Text('$_result', style: Theme.of(context).textTheme.headlineMedium),
+              const Text('10 + 50 (from C) =', style: TextStyle(color: Colors.grey)),
+              Text('$_result', style: const TextStyle(fontSize: 48, fontWeight: FontWeight.w300)),
+              const SizedBox(height: 40),
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text(
+                  "Если вы видите число 60, значит C-код успешно скомпилирован и связан через JNI/FFI.",
+                  textAlign: TextAlign.center,
+                ),
+              ),
             ],
           ),
         ),
