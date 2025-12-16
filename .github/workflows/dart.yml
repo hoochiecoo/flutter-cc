@@ -20,8 +20,8 @@ jobs:
           flutter-version: '3.19.0'
           cache: true
 
-      # 1. Clean Generate
-      - name: Regenerate Android Project
+      # 1. Regenerate
+      - name: Regenerate Android
         run: |
           rm -rf android
           flutter create . --project-name=webview_ci_app --org com.bowlmates.app --platforms=android
@@ -31,25 +31,22 @@ jobs:
         run: |
           mkdir -p src
           if [ ! -f src/native_add.c ]; then
-            echo 'int native_add(int x, int y) { return x + y; }' > src/native_add.c
+             echo 'int native_add(int x, int y) { return x + y; }' > src/native_add.c
           fi
           echo 'cmake_minimum_required(VERSION 3.4.1)
           add_library( native_add SHARED ../../src/native_add.c )' > android/app/CMakeLists.txt
 
-      # 3. Patch Gradle (FIXED: One-line injection to avoid syntax errors)
+      # 3. Patch Gradle (SAFE ONE-LINER)
+      # Мы используем пробелы вместо \\n, чтобы избежать проблем с экранированием.
       - name: Patch build.gradle
         run: |
-          # Set minSdk
           sed -i 's/minSdkVersion .*/minSdkVersion 21/g' android/app/build.gradle
           
-          # Inject CMake config BEFORE buildTypes. 
-          # We use a single line string to avoid escaping hell.
-          # Groovy allows blocks like { ... } on one line.
-          sed -i 's|buildTypes {|externalNativeBuild { cmake { path "CMakeLists.txt" } } \\n    buildTypes {|' android/app/build.gradle
+          # SAFETY FIX: No backslashes, no newlines. Just valid Groovy code on one line.
+          sed -i 's|buildTypes {|externalNativeBuild { cmake { path "CMakeLists.txt" } } buildTypes {|' android/app/build.gradle
           
-          echo "=== DEBUG: build.gradle content ==="
-          cat android/app/build.gradle
-          echo "==================================="
+          echo "=== DEBUG CONTENT ==="
+          grep "externalNativeBuild" android/app/build.gradle
 
       - name: Get Dependencies
         run: flutter pub get
