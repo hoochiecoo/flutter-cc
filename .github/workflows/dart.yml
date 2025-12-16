@@ -10,63 +10,46 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
-
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           flutter-version: '3.19.0'
           cache: true
 
-      # -------------------------------------------------------
-      # ШАГ 1: ГЕНЕРАЦИЯ ЧИСТОГО ANDROID ПРОЕКТА
-      # Мы удаляем папку android и создаем её заново через flutter create.
-      # Это решает все проблемы с версиями Gradle и V1 embedding.
-      # -------------------------------------------------------
+      # 1. Clean Generate
       - name: Regenerate Android Project
         run: |
           rm -rf android
           flutter create . --project-name=webview_ci_app --org com.bowlmates.app --platforms=android
 
-      # -------------------------------------------------------
-      # ШАГ 2: НАСТРОЙКА NATIVE КОДА (C/C++)
-      # Убеждаемся, что файлы на месте, даже если их нет в git
-      # -------------------------------------------------------
+      # 2. Setup Native
       - name: Setup Native Code
         run: |
           mkdir -p src
-          
-          # Если файла C нет, создаем его (резервный вариант)
           if [ ! -f src/native_add.c ]; then
-            echo '#include <stdint.h>
-            __attribute__((visibility("default"))) __attribute__((used))
-            int32_t native_add(int32_t x, int32_t y) { return x + y; }' > src/native_add.c
+            echo 'int native_add(int x, int y) { return x + y; }' > src/native_add.c
           fi
-
-          # Создаем/Перезаписываем CMakeLists.txt в папке приложения
           echo 'cmake_minimum_required(VERSION 3.4.1)
           add_library( native_add SHARED ../../src/native_add.c )' > android/app/CMakeLists.txt
 
-      # -------------------------------------------------------
-      # ШАГ 3: ПАТЧ GRADLE (САМОЕ ВАЖНОЕ)
-      # Вставляем ссылку на CMake в build.gradle
-      # -------------------------------------------------------
-      - name: Patch build.gradle for FFI
+      # 3. Patch Gradle (FIXED: One-line injection to avoid syntax errors)
+      - name: Patch build.gradle
         run: |
-          # 1. Устанавливаем минимальную версию SDK на 21
+          # Set minSdk
           sed -i 's/minSdkVersion .*/minSdkVersion 21/g' android/app/build.gradle
           
-          # 2. Вставляем блок externalNativeBuild.
-          # Ищем строку "buildTypes {" и вставляем код ПЕРЕД ней.
-          # Это помещает блок внутрь "android {}", но вне "defaultConfig {}".
-          sed -i '/buildTypes {/i \\    externalNativeBuild {\\n        cmake {\\n            path "CMakeLists.txt"\\n        }\\n    }\\n' android/app/build.gradle
+          # Inject CMake config BEFORE buildTypes. 
+          # We use a single line string to avoid escaping hell.
+          # Groovy allows blocks like { ... } on one line.
+          sed -i 's|buildTypes {|externalNativeBuild { cmake { path "CMakeLists.txt" } } \\n    buildTypes {|' android/app/build.gradle
           
-          echo "Checked build.gradle content:"
+          echo "=== DEBUG: build.gradle content ==="
           cat android/app/build.gradle
+          echo "==================================="
 
       - name: Get Dependencies
         run: flutter pub get
